@@ -1,10 +1,6 @@
-import torch
+import torch, time, pyaudio, numpy as np, sounddevice as sd
 from TTS.api import TTS
-import sounddevice as sd
-import numpy as np
-import pyaudio
 from flask import Flask, request, jsonify
-import os
 
 app = Flask(__name__)
 
@@ -18,9 +14,13 @@ def load_model():
 
     # Get the model name from request, default to xtts_v2
     model_name = request.json.get("model", "tts_models/multilingual/multi-dataset/xtts_v2")
-
+    if not model_name:
+        model_name = "tts_models/multilingual/multi-dataset/xtts_v2"
+        
+    if tts_model is not None and model_name == tts_model.model_name:
+        return jsonify({"status": "success", "message": f"Model {model_name} already loaded."})
+    
     try:
-        # Load the TTS model
         tts_model = TTS(model_name).to(device)
         return jsonify({"status": "success", "message": f"Model {model_name} loaded."})
     except Exception as e:
@@ -36,6 +36,7 @@ def translate():
     text = request.json.get("text")
     if not text:
         return jsonify({"status": "error", "message": "No text provided."}), 400
+    start_time = time.time()
 
     try:
         wav = tts_model.tts(text=text, speaker_wav="./audio/johns_voice.wav", language="en")
@@ -53,6 +54,8 @@ def translate():
         # stream.close()
         # p.terminate()
 
+        time_taken = time.time() - start_time
+        app.logger.info(f"Translated text to audio in {time_taken:.2f}s")
         return jsonify({"status": "success", "message": "Audio played successfully."})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
