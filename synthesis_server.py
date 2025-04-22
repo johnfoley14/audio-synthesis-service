@@ -1,8 +1,10 @@
 import torch, time, pyaudio, numpy as np, sounddevice as sd
 from TTS.api import TTS
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 tts_model = None
 sample_rate = 24000
@@ -26,38 +28,32 @@ def load_model():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-@app.route("/translate", methods=["POST"])
-def translate():
+@app.route("/synthesis", methods=["POST"])
+def synthesis():
     global tts_model
 
     if tts_model is None:
         return jsonify({"status": "error", "message": "No model loaded. Call /load_model first."}), 400
-
-    text = request.json.get("text")
+    
+    text = request.json.get("transcript")
     if not text:
         return jsonify({"status": "error", "message": "No text provided."}), 400
     start_time = time.time()
 
     try:
+        print("Synthesizing audio...")
+        # wav = tts_model.tts(text=text)
         wav = tts_model.tts(text=text, speaker_wav="./audio/johns_voice.wav", language="en")
-
+        print("Audio synthesis complete.")
         # Play the generated audio
         sd.play(wav, samplerate=sample_rate)
         sd.wait()
-
-        # wav_np = np.array(wav, dtype=np.float32)
-        # wav_int16 = (wav_np * 32767).astype(np.int16)
-        # p = pyaudio.PyAudio()
-        # stream = p.open(format=pyaudio.paInt16, channels=1, rate=24000, output=True)
-        # stream.write(wav_int16.tobytes())
-        # stream.stop_stream()
-        # stream.close()
-        # p.terminate()
 
         time_taken = time.time() - start_time
         app.logger.info(f"Translated text to audio in {time_taken:.2f}s")
         return jsonify({"status": "success", "message": "Audio played successfully."})
     except Exception as e:
+        print(e)
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
