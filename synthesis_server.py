@@ -45,7 +45,9 @@ def load_model():
         kokoro_pipeline = KPipeline(lang_code='a')
         tts_model = None
         model_type = "kokoro"
-        return jsonify({"status": "success", "message": "Kokoro model loaded."})
+        generator = kokoro_pipeline("Warm up model.", voice='af_heart', speed=1)
+        _, _, _ = next(generator)
+        return jsonify({"status": "success", "message": "Kokoro model loaded and warmed up."})
     else:
         if tts_model is not None and model_name == getattr(tts_model, 'model_name', None):
             return jsonify({"status": "success", "message": f"Model {model_name} already loaded."})
