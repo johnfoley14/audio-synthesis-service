@@ -37,14 +37,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 @app.route("/load_model", methods=["POST"])
 def load_model():
     global tts_model, kokoro_pipeline, model_type
-
     model_name = request.json.get("model", "kokoro")
-    # model_name = request.json.get("model", "tts_models/multilingual/multi-dataset/xtts_v2")
 
     if "kokoro" in model_name.lower():
         kokoro_pipeline = KPipeline(lang_code='a')
         tts_model = None
         model_type = "kokoro"
+        # Warm the model to avoid latency on first request
         generator = kokoro_pipeline("Warm up model.", voice='af_heart', speed=1)
         _, _, _ = next(generator)
         return jsonify({"status": "success", "message": "Kokoro model loaded and warmed up."})
@@ -102,6 +101,23 @@ def split_sentence(text):
         return text[:last_idx+1], text[last_idx+1:].lstrip()
     return None, text
 
+def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
+    print(f"SID: {sid} | Start: {audio_start_time} | End: {audio_end_time} | Text: {text}")
+    try:
+        if model_type == "coqui":
+            wav = tts_model.tts(text=text, speaker_wav="./audio/johns_voice.wav", language="en")
+        else:
+            start_time = time.time() * 1000
+            generator = kokoro_pipeline(text, voice='af_heart', speed=1)
+            _, _, audio = next(generator)
+            end_time = time.time() * 1000
+            testing_logs["synthesis time"].append(end_time - start_time)
+            wav = (audio.detach().cpu().numpy() * 32767).astype(np.int16)
+        with synthesis_lock:
+            synthesis_results[sid] = {"wav": wav, "audio_start_time": audio_start_time + connection_start, "audio_end_time": audio_end_time+ connection_start}
+    except Exception as e:
+        print(f"Synthesis error for seq {sid}:", e)
+
 @app.route("/synthesis", methods=["POST"])
 def synthesis():
     if tts_model is None and kokoro_pipeline is None:
@@ -129,28 +145,10 @@ def synthesis():
         sentence, rest = split_sentence(text_buffer["text"])
         print(f"Sentence: {sentence}, Rest: {rest}")
         if sentence and (rest.strip() == ""):
-            # Only synthesize if no rest text, so that we ensure we know the start/end time of the sentence
+            # Only synthesize if no rest text, so that we ensure we know the start/end time of the sentence for latency testing
             sequence_id = next(synthesis_counter)
-
             sentence_start = text_buffer["start"]
             sentence_end = text_buffer["end"]
-
-            def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
-                print(f"SID: {sid} | Start: {audio_start_time} | End: {audio_end_time} | Text: {text}")
-                try:
-                    if model_type == "coqui":
-                        wav = tts_model.tts(text=text, speaker_wav="./audio/johns_voice.wav", language="en")
-                    else:
-                        start_time = time.time() * 1000
-                        generator = kokoro_pipeline(text, voice='af_heart', speed=1)
-                        _, _, audio = next(generator)
-                        end_time = time.time() * 1000
-                        testing_logs["synthesis time"].append(end_time - start_time)
-                        wav = (audio.detach().cpu().numpy() * 32767).astype(np.int16)
-                    with synthesis_lock:
-                        synthesis_results[sid] = {"wav": wav, "audio_start_time": audio_start_time + connection_start, "audio_end_time": audio_end_time+ connection_start}
-                except Exception as e:
-                    print(f"Synthesis error for seq {sid}:", e)
 
             Thread(target=synthesize, args=(sentence, sentence_start, sentence_end, sequence_id, request.json.get("connection start")), daemon=True).start()
 
