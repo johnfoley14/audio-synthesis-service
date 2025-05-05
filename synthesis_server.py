@@ -16,8 +16,8 @@ pending_ids = []
 buffer_lock = Lock()
 skipped_ids = set()
 testing_logs = {
-    "transcription time": [],
-    "synthesis time": [],
+    "transcription time": {},
+    "synthesis time": {},
     "transmission time": [],
     "sampling time": [],
     "playback time": [],
@@ -111,7 +111,7 @@ def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
             generator = kokoro_pipeline(text, voice='af_heart', speed=1)
             _, _, audio = next(generator)
             end_time = time.time() * 1000
-            testing_logs["synthesis time"].append(end_time - start_time)
+            testing_logs["synthesis time"][text] = end_time - start_time
             wav = (audio.detach().cpu().numpy() * 32767).astype(np.int16)
         with synthesis_lock:
             synthesis_results[sid] = {"wav": wav, "audio_start_time": audio_start_time + connection_start, "audio_end_time": audio_end_time+ connection_start}
@@ -128,11 +128,11 @@ def synthesis():
         return jsonify({"status": "error", "message": "No text provided."}), 400
     
     # transmission time - how long it takes the transcription to get from the caller to the recipient
-    transmission_time = data.get("recipient-posted-at") - data.get("caller-posted-at")
+    transmission_time = data.get("recipient-posted-at") - (data.get("caller-posted-at") - 300)
     testing_logs["transmission time"].append(transmission_time)
     # transcription time - how long it takes for audio to be transcribed and get to the callers web app
     transcription_time = data.get("caller-posted-at") - (data.get("connection start") + data.get("end"))
-    testing_logs["transcription time"].append(transcription_time)
+    testing_logs["transcription time"][text] = transcription_time
 
     global text_buffer
     with buffer_lock:
@@ -144,25 +144,30 @@ def synthesis():
 
         sentence, rest = split_sentence(text_buffer["text"])
         print(f"Sentence: {sentence}, Rest: {rest}")
-        if sentence and (rest.strip() == ""):
-            # Only synthesize if no rest text, so that we ensure we know the start/end time of the sentence for latency testing
+        if sentence:
+            duration_ms = text_buffer["end"] - text_buffer["start"]
+            total_chars = len(text_buffer["text"])
+            sentence_chars = len(sentence)
+            
+            # Estimate sentence end time proportionally
+            estimated_sentence_end = text_buffer["start"] + int((sentence_chars / total_chars) * duration_ms)
+            
             sequence_id = next(synthesis_counter)
-            sentence_start = text_buffer["start"]
-            sentence_end = text_buffer["end"]
+            Thread(target=synthesize, args=(sentence, text_buffer["start"], estimated_sentence_end, sequence_id, request.json.get("connection start") - 300), daemon=True).start()
 
-            Thread(target=synthesize, args=(sentence, sentence_start, sentence_end, sequence_id, request.json.get("connection start")), daemon=True).start()
+            # Update buffer with remaining text
+            text_buffer["text"] = rest.strip()
+            text_buffer["start"] = estimated_sentence_end if rest.strip() else None
+            text_buffer["end"] = data.get("end")
 
-            text_buffer["text"] = ""
-            text_buffer["start"] = None
-            text_buffer["end"] = None
     return jsonify({"status": "success", "message": "Text buffered, synthesis triggered if sentence complete."})
 
 Thread(target=playback_worker, daemon=True).start()
 
 def save_testing_logs():
     if testing_logs:  # Only if there are logs
-        avg_transcription = np.mean(testing_logs["transcription time"]) if testing_logs["transcription time"] else 0
-        avg_synthesis = np.mean(testing_logs["synthesis time"]) if testing_logs["synthesis time"] else 0
+        avg_transcription = np.mean(list(testing_logs["transcription time"].values())) if testing_logs["transcription time"] else 0
+        avg_synthesis = np.mean(list(testing_logs["synthesis time"].values())) if testing_logs["synthesis time"] else 0
         avg_transmission = np.mean(testing_logs["transmission time"]) if testing_logs["transmission time"] else 0
         avg_playback = np.mean(testing_logs["playback time"]) if testing_logs["playback time"] else 0
         avg_latency = np.mean(testing_logs["system latency"]) if testing_logs["system latency"] else 0

@@ -3,3 +3,4 @@ ubuntu_venv/
 notes
 audio/
 logs/
+tests/chunks
