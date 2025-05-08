@@ -8,7 +8,7 @@ with open('./annotation_formatted.txt', 'r', encoding='utf-8') as f:
 
 # Loop over each run folder
 for i in range(1, 4):
-    run_folder = f'./test_results/run{i}'
+    run_folder = f'./test_results/run{i}_small'
     hyp_file = os.path.join(run_folder, f'output_transcript.txt')
     with open(hyp_file, 'r') as file:
         text = file.read().replace('\n', ' ')
