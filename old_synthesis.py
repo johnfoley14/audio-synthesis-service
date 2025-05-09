@@ -30,8 +30,6 @@ CORS(app)
 tts_model = None
 kokoro_pipeline = None
 model_type = None  # 'coqui' or 'kokoro'
-total_queued_audio_duration = 0  # in seconds
-voice = "af_heart"  # Default voice
 
 sample_rate = 24000
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -46,8 +44,7 @@ def load_model():
         tts_model = None
         model_type = "kokoro"
         # Warm the model to avoid latency on first request
-        warmup_text = "Warm up model. This is a warm up setence to initialize the model and weights. It should help reduce the latency for the first request later."
-        generator = kokoro_pipeline(warmup_text, voice='af_heart', speed=1)
+        generator = kokoro_pipeline("Warm up model.", voice='af_heart', speed=1)
         _, _, _ = next(generator)
         return jsonify({"status": "success", "message": "Kokoro model loaded and warmed up."})
     else:
@@ -62,7 +59,7 @@ def load_model():
             return jsonify({"status": "error", "message": str(e)}), 500
 
 def playback_worker():
-    global next_to_play, total_queued_audio_duration
+    global next_to_play
     while True:
         with synthesis_lock:
             while next_to_play in skipped_ids:
@@ -74,8 +71,6 @@ def playback_worker():
                 wav = synthesis_result["wav"]
                 audio_start_time = synthesis_result["audio_start_time"]
                 audio_end_time = synthesis_result["audio_end_time"]
-                duration_sec = len(wav) / sample_rate
-                total_queued_audio_duration = max(0, total_queued_audio_duration - duration_sec)
                 next_to_play += 1
             else:
                 wav = None
@@ -95,46 +90,31 @@ def playback_worker():
         else:
             time.sleep(0.05)
 
-
 def split_sentence(text):
-    first_idx = -1
+    last_idx = -1
     for punct in (".", "!", "?"):
-        idx = text.find(punct)
-        if idx != -1 and (first_idx == -1 or idx < first_idx):
-            first_idx = idx
+        idx = text.rfind(punct)
+        if idx > last_idx:
+            last_idx = idx
 
-    if first_idx != -1:
-        return text[:first_idx+1], text[first_idx+1:].lstrip()
+    if last_idx != -1:
+        return text[:last_idx+1], text[last_idx+1:].lstrip()
     return None, text
 
 def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
-    global total_queued_audio_duration
     print(f"SID: {sid} | Start: {audio_start_time} | End: {audio_end_time} | Text: {text}")
     try:
         if model_type == "coqui":
             wav = tts_model.tts(text=text, speaker_wav="./audio/johns_voice.wav", language="en")
         else:
-            # Choose speed and voice based on queue length
-            with synthesis_lock:
-                queued_seconds = total_queued_audio_duration
-            speed = 1.3 if queued_seconds > 10 else 1.1
-
             start_time = time.time() * 1000
-            generator = kokoro_pipeline(text, voice=voice, speed=speed)
+            generator = kokoro_pipeline(text, voice='af_heart', speed=1)
             _, _, audio = next(generator)
             end_time = time.time() * 1000
-            testing_logs["synthesis time"][text] = (end_time - start_time, speed)
-
+            testing_logs["synthesis time"][text] = end_time - start_time
             wav = (audio.detach().cpu().numpy() * 32767).astype(np.int16)
-            audio_duration_sec = len(wav) / sample_rate
-
         with synthesis_lock:
-            total_queued_audio_duration += audio_duration_sec
-            synthesis_results[sid] = {
-                "wav": wav,
-                "audio_start_time": audio_start_time + connection_start,
-                "audio_end_time": audio_end_time + connection_start
-            }
+            synthesis_results[sid] = {"wav": wav, "audio_start_time": audio_start_time + connection_start, "audio_end_time": audio_end_time+ connection_start}
     except Exception as e:
         print(f"Synthesis error for seq {sid}:", e)
 
@@ -148,7 +128,7 @@ def synthesis():
         return jsonify({"status": "error", "message": "No text provided."}), 400
     
     # transmission time - how long it takes the transcription to get from the caller to the recipient
-    transmission_time = data.get("recipient-posted-at") - (data.get("caller-posted-at") - 700)
+    transmission_time = data.get("recipient-posted-at") - (data.get("caller-posted-at") - 300)
     testing_logs["transmission time"].append(transmission_time)
     # transcription time - how long it takes for audio to be transcribed and get to the callers web app
     transcription_time = data.get("caller-posted-at") - (data.get("connection start") + data.get("end"))
@@ -162,48 +142,27 @@ def synthesis():
         text_buffer["end"] = data.get("end")
         text_buffer["text"] = text_buffer["text"].strip()
 
-        while True:
-            sentence, rest = split_sentence(text_buffer["text"])
-            if not sentence:
-                break
-
+        sentence, rest = split_sentence(text_buffer["text"])
+        print(f"Sentence: {sentence}, Rest: {rest}")
+        if sentence:
             duration_ms = text_buffer["end"] - text_buffer["start"]
             total_chars = len(text_buffer["text"])
             sentence_chars = len(sentence)
-
+            
+            # Estimate sentence end time proportionally
             estimated_sentence_end = text_buffer["start"] + int((sentence_chars / total_chars) * duration_ms)
-
+            
             sequence_id = next(synthesis_counter)
-            Thread(
-                target=synthesize,
-                args=(sentence, text_buffer["start"], estimated_sentence_end, sequence_id, request.json.get("connection start") - 700),
-                daemon=True
-            ).start()
+            Thread(target=synthesize, args=(sentence, text_buffer["start"], estimated_sentence_end, sequence_id, request.json.get("connection start") - 300), daemon=True).start()
 
-            if not rest.strip():
-                text_buffer["text"] = ""
-                text_buffer["start"] = None
-                break
-            else:
-                text_buffer["text"] = rest.strip()
-                text_buffer["start"] = estimated_sentence_end
+            # Update buffer with remaining text
+            text_buffer["text"] = rest.strip()
+            text_buffer["start"] = estimated_sentence_end if rest.strip() else None
+            text_buffer["end"] = data.get("end")
 
     return jsonify({"status": "success", "message": "Text buffered, synthesis triggered if sentence complete."})
 
 Thread(target=playback_worker, daemon=True).start()
-
-@app.route("/set_voice", methods=["POST"])
-def set_voice():
-    global voice
-    allowed_voices = {"af_heart", "af_bella", "am_fenrir", "am_michael"}  # Example list
-    requested_voice = request.json.get("voice", "af_heart")
-
-    if requested_voice in allowed_voices:
-        voice = requested_voice
-    else:
-        voice = "af_heart"
-
-    return jsonify({"status": "success", "selected_voice": voice})
 
 def save_testing_logs():
     if testing_logs:  # Only if there are logs

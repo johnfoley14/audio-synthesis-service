@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt, numpy as np, json
 from scipy import stats
 
-files = ['./test_results/run1_tiny/testing_logs.json', './test_results/run2_tiny/testing_logs.json', './test_results/run3_tiny/testing_logs.json']
+files = ['./test_results/run1_improved_synthesis_strategy/testing_logs.json', './test_results/run2_improved_synthesis_strategy/testing_logs.json', './test_results/run3_improved_synthesis_strategy/testing_logs.json']
 labels = ['Run 1', 'Run 2', 'Run 3']
 
 def plot_data(files, labels, key, ylabel, title):
@@ -18,17 +18,17 @@ def plot_data(files, labels, key, ylabel, title):
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f'./graphs/{key.replace(" ", "_")}_tiny.png')
+    plt.savefig(f'./graphs/{key.replace(" ", "_")}_improved.png')
     plt.close()
 
 # Plot synthesis time
-plot_data(files, labels, 'synthesis time', 'Synthesis Time (ms)', 'Sentence Synthesis Time Comparison Tiny Model')
+plot_data(files, labels, 'synthesis time', 'Synthesis Time (ms)', 'Sentence Synthesis Time Comparison Using Improved Synthesis Strategy')
 
 # Plot transcription time
-plot_data(files, labels, 'transcription time', 'Transcription Time (ms)', 'Sentence Transcription Time Comparison Using Tiny Model')
+plot_data(files, labels, 'transcription time', 'Transcription Time (ms)', 'Sentence Transcription Time Comparison Using Improved Synthesis Strategy')
 
 # Plot system latency
-plot_data(files, labels, 'system latency', 'System Latency (ms)', 'System Latency Comparison Using Tiny Model')
+plot_data(files, labels, 'system latency', 'System Latency (ms)', 'System Latency Comparison Using Improved Synthesis Strategy')
 
 metrics = ['synthesis time', 'transcription time', 'system latency']
 
@@ -53,7 +53,7 @@ def process_metric(files, metric):
 
     # Plot histogram
     plt.hist(data, bins=40, edgecolor='black')
-    plt.title(f'Distribution of {metric.capitalize()} with Base Model')
+    plt.title(f'Distribution of {metric.capitalize()} with  Improved Synthesis Strategy')
     plt.xlabel('Time (ms)')
     plt.ylabel('Frequency')
     plt.grid(True)
@@ -66,7 +66,7 @@ def process_metric(files, metric):
 
     # Save and close
     plt.tight_layout()
-    plt.savefig(f'./graphs/{metric.replace(" ", "_")}_base_histogram.png', bbox_inches='tight')
+    plt.savefig(f'./graphs/{metric.replace(" ", "_")}_improved_histogram.png', bbox_inches='tight')
     plt.close()
 
 # Process each metric
