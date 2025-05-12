@@ -6,11 +6,11 @@ import os
 os.makedirs('./graphs', exist_ok=True)
 
 for run_id in range(1, 4):
-    path = f'./test_results/run{run_id}_tiny/testing_logs.json'
+    path = f'./test_results/run{run_id}_improved_synthesis_strategy/testing_logs.json'
     with open(path) as f:
         data = json.load(f)
 
-    synthesis_times = list(data['synthesis time'].values())
+    synthesis_times = [v[0] for v in data['synthesis time'].values()]
     synthesis_keys = list(data['synthesis time'].keys())
     transcription_items = list(data['transcription time'].items())
     playback_times = list(data['playback time'])
@@ -52,9 +52,9 @@ for run_id in range(1, 4):
     plt.plot(system_latencies, label='System Latency')
     plt.xlabel('Sentence Index')
     plt.ylabel('Time (ms)')
-    plt.title(f'Latency Metrics - Run {run_id} Using Tiny Model')
+    plt.title(f'Latency Metrics - Run {run_id} Using Improved Synthesis Strategy')
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    plt.savefig(f'./graphs/run{run_id}_latency_plot.png')
+    plt.savefig(f'./graphs/run{run_id}_improved_latency_plot.png')
     plt.close()

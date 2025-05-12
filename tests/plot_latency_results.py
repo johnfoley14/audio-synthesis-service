@@ -9,7 +9,9 @@ def plot_data(files, labels, key, ylabel, title):
     for file, label in zip(files, labels):
         with open(file) as f:
             data = json.load(f)
-            values = list(data[key].values()) if isinstance(data[key], dict) else data[key]
+            # values = list(data[key].values()) if isinstance(data[key], dict) else data[key]
+            values = [v[0] for v in data[key].values()] if isinstance(data[key], dict) else [v[0] for v in data[key]]
+            print(values)
             plt.plot(range(len(values)), values, label=label)
 
     plt.xlabel('Index')
@@ -25,20 +27,23 @@ def plot_data(files, labels, key, ylabel, title):
 plot_data(files, labels, 'synthesis time', 'Synthesis Time (ms)', 'Sentence Synthesis Time Comparison Using Improved Synthesis Strategy')
 
 # Plot transcription time
-plot_data(files, labels, 'transcription time', 'Transcription Time (ms)', 'Sentence Transcription Time Comparison Using Improved Synthesis Strategy')
+# plot_data(files, labels, 'transcription time', 'Transcription Time (ms)', 'Sentence Transcription Time Comparison Using Improved Synthesis Strategy')
 
 # Plot system latency
-plot_data(files, labels, 'system latency', 'System Latency (ms)', 'System Latency Comparison Using Improved Synthesis Strategy')
+# plot_data(files, labels, 'system latency', 'System Latency (ms)', 'System Latency Comparison Using Improved Synthesis Strategy')
 
-metrics = ['synthesis time', 'transcription time', 'system latency']
+metrics = ['synthesis time']
 
 def process_metric(files, metric):
     data = []
     for file in files:
         with open(file) as f:
             json_data = json.load(f)
-            data.extend(json_data[metric].values() if isinstance(json_data[metric], dict) else json_data[metric])
+            # data.extend(json_data[metric].values() if isinstance(json_data[metric], dict) else json_data[metric])
+            
+            data.extend([v[0] for v in json_data[metric].values()] if isinstance(json_data[metric], dict) else [v[0] for v in json_data[metric]])
 
+    print(data)
     # Calculations
     n = len(data)
     mean = np.mean(data)
@@ -70,6 +75,6 @@ def process_metric(files, metric):
     plt.close()
 
 # Process each metric
-for metric in metrics:
-    process_metric(files, metric)
+# for metric in metrics:
+process_metric(files, 'synthesis time')
 

@@ -140,6 +140,7 @@ def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
 
 @app.route("/synthesis", methods=["POST"])
 def synthesis():
+    # Check if the model is loaded
     if tts_model is None and kokoro_pipeline is None:
         return jsonify({"status": "error", "message": "No model loaded."}), 400
     data = request.json
@@ -176,7 +177,7 @@ def synthesis():
             sequence_id = next(synthesis_counter)
             Thread(
                 target=synthesize,
-                args=(sentence, text_buffer["start"], estimated_sentence_end, sequence_id, request.json.get("connection start") - 700),
+                args=(sentence, text_buffer["start"], estimated_sentence_end, sequence_id, request.json.get("connection start")-700),
                 daemon=True
             ).start()
 
@@ -202,7 +203,6 @@ def set_voice():
         voice = requested_voice
     else:
         voice = "af_heart"
-
     return jsonify({"status": "success", "selected_voice": voice})
 
 def save_testing_logs():
