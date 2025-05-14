@@ -100,6 +100,7 @@ def split_sentence(text):
     if last_idx != -1:
         return text[:last_idx+1], text[last_idx+1:].lstrip()
     return None, text
+voice = 'jim'
 
 def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
     print(f"SID: {sid} | Start: {audio_start_time} | End: {audio_end_time} | Text: {text}")
@@ -108,13 +109,17 @@ def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
             wav = tts_model.tts(text=text, speaker_wav="./audio/johns_voice.wav", language="en")
         else:
             start_time = time.time() * 1000
-            generator = kokoro_pipeline(text, voice='af_heart', speed=1)
+            generator = kokoro_pipeline(text, voice=voice, speed=1)
             _, _, audio = next(generator)
             end_time = time.time() * 1000
             testing_logs["synthesis time"][text] = end_time - start_time
             wav = (audio.detach().cpu().numpy() * 32767).astype(np.int16)
         with synthesis_lock:
-            synthesis_results[sid] = {"wav": wav, "audio_start_time": audio_start_time + connection_start, "audio_end_time": audio_end_time+ connection_start}
+            synthesis_results[sid] = {
+                "wav": wav, 
+                "audio_start_time": audio_start_time + connection_start, 
+                "audio_end_time": audio_end_time+ connection_start
+            }
     except Exception as e:
         print(f"Synthesis error for seq {sid}:", e)
 

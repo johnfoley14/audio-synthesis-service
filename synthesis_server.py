@@ -7,6 +7,7 @@ import itertools
 
 from kokoro import KPipeline
 
+# Define global variables used for synthesis and concurrency safety
 synthesis_results = {} # dictionary to store the wav audio produced by the TTS model
 synthesis_lock = Lock()
 synthesis_counter = itertools.count(start=1)
@@ -15,6 +16,7 @@ text_buffer = {"text": "", "start": None, "end": None}
 pending_ids = []
 buffer_lock = Lock()
 skipped_ids = set()
+# Dictionary to store testing logs
 testing_logs = {
     "transcription time": {},
     "synthesis time": {},
@@ -24,9 +26,11 @@ testing_logs = {
     "system latency": []
 }
 
+# Initialize Flask app and enables CORS
 app = Flask(__name__)
 CORS(app)
 
+# Global variables for TTS model and pipeline
 tts_model = None
 kokoro_pipeline = None
 model_type = None  # 'coqui' or 'kokoro'
@@ -36,6 +40,7 @@ voice = "af_heart"  # Default voice
 sample_rate = 24000
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+# Allows users to load the model they want to use
 @app.route("/load_model", methods=["POST"])
 def load_model():
     global tts_model, kokoro_pipeline, model_type
@@ -61,6 +66,7 @@ def load_model():
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500
 
+# Worker to read synthesizied audio and play it in order
 def playback_worker():
     global next_to_play, total_queued_audio_duration
     while True:
@@ -95,7 +101,7 @@ def playback_worker():
         else:
             time.sleep(0.05)
 
-
+# Helper function to split text into sentences
 def split_sentence(text):
     first_idx = -1
     for punct in (".", "!", "?"):
@@ -107,6 +113,7 @@ def split_sentence(text):
         return text[:first_idx+1], text[first_idx+1:].lstrip()
     return None, text
 
+# Synthesis thread to create audio from text and add it to the queue
 def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
     global total_queued_audio_duration
     print(f"SID: {sid} | Start: {audio_start_time} | End: {audio_end_time} | Text: {text}")
@@ -138,6 +145,7 @@ def synthesize(text, audio_start_time, audio_end_time, sid, connection_start):
     except Exception as e:
         print(f"Synthesis error for seq {sid}:", e)
 
+# Endpoint to handle synthesis requests and set complete sentences for synthesis
 @app.route("/synthesis", methods=["POST"])
 def synthesis():
     # Check if the model is loaded
@@ -193,6 +201,7 @@ def synthesis():
 
 Thread(target=playback_worker, daemon=True).start()
 
+# Endpoint set the voice for the TTS model
 @app.route("/set_voice", methods=["POST"])
 def set_voice():
     global voice
